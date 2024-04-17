@@ -51,15 +51,7 @@ fi
 
 echo "Removing the old writer utility and compiling as a native application"
 make clean
-make
 
-if [ $? -eq 0 ]; then
-	echo "success"
-	exit 0
-else
-	echo "failed to build the writer C application"
-	exit 1
-fi
 
 for i in $( seq 1 $NUMFILES)
 do
