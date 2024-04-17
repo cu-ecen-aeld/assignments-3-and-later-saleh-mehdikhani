@@ -1,3 +1,8 @@
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <stdio.h>
+#include <fcntl.h>
 #include "systemcalls.h"
 
 /**
@@ -16,8 +21,12 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
-
-    return true;
+    int sys_ret = system(cmd);
+    if (sys_ret == -1) {
+        return false;
+    } else {
+        return true;
+    }
 }
 
 /**
@@ -58,10 +67,34 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
+    bool ret_val = true;
+
+    int kidpid = fork();
+    if (kidpid == -1) {
+        // Error to fork!
+        perror("fork");
+        ret_val = false;
+    }else if (kidpid == 0) {
+        // The child process
+        execv(command[0], &(command[1]));
+        // If reaches here, means an error has occured
+        perror("execv");
+        ret_val = false;
+    } else {
+        // The parent process
+        int status;
+        int terminatedpid = waitpid(kidpid, &status, 0);
+        if (terminatedpid == -1) {
+            perror("waitpid");
+            ret_val = false;
+        } else if (!WIFEXITED(status)) {
+            ret_val = false;
+        }
+    }
 
     va_end(args);
 
-    return true;
+    return ret_val;
 }
 
 /**
@@ -92,8 +125,44 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
+    bool ret_val = true;
+
+    int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+    if (fd < 0) {
+        perror("open");
+        va_end(args);
+        return false;
+    }
+
+    int kidpid = fork();
+    if (kidpid == -1) {
+        // Error to fork!
+        perror("fork");
+        ret_val = false;
+    }else if (kidpid == 0) {
+        if (dup2(fd, 1) < 0) {
+            va_end(args);
+            return false;
+        }
+        close(fd);
+        // The child process
+        execv(command[0], &(command[1]));
+        // If reaches here, means an error has occured
+        perror("execv");
+        ret_val = false;
+    } else {
+        // The parent process
+        int status;
+        int terminatedpid = waitpid(kidpid, &status, 0);
+        if (terminatedpid == -1) {
+            perror("waitpid");
+            ret_val = false;
+        } else if (!WIFEXITED(status)) {
+            ret_val = false;
+        }
+    }
 
     va_end(args);
 
-    return true;
+    return ret_val;
 }
