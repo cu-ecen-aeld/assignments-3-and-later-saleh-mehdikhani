@@ -74,21 +74,30 @@ bool do_exec(int count, ...)
         // Error to fork!
         perror("fork");
         ret_val = false;
-    }else if (kidpid == 0) {
+    } else if (kidpid == 0) {
         // The child process
-        execv(command[0], &(command[1]));
+        execv(command[0], command);
         // If reaches here, means an error has occured
         perror("execv");
-        ret_val = false;
+        exit(EXIT_FAILURE);
     } else {
         // The parent process
-        int status;
+        int status = 0;
         int terminatedpid = waitpid(kidpid, &status, 0);
         if (terminatedpid == -1) {
             perror("waitpid");
             ret_val = false;
-        } else if (!WIFEXITED(status)) {
-            ret_val = false;
+        } else {
+            if (WIFEXITED(status)) {
+                // child exited normally
+                if (WEXITSTATUS(status) != 0) {
+                    // child command return error
+                    return false;
+                }
+            } else {
+                // child exited error
+                return false;
+            }
         }
     }
 
@@ -139,14 +148,14 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
         // Error to fork!
         perror("fork");
         ret_val = false;
-    }else if (kidpid == 0) {
+    } else if (kidpid == 0) {
         if (dup2(fd, 1) < 0) {
             va_end(args);
             return false;
         }
         close(fd);
         // The child process
-        execv(command[0], &(command[1]));
+        execv(command[0], command);
         // If reaches here, means an error has occured
         perror("execv");
         ret_val = false;
@@ -157,8 +166,14 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
         if (terminatedpid == -1) {
             perror("waitpid");
             ret_val = false;
-        } else if (!WIFEXITED(status)) {
-            ret_val = false;
+        } else {
+            if (WIFEXITED(status)) {
+                if(WEXITSTATUS(status) != 0) {
+                    ret_val = false;
+                }
+            } else {
+                ret_val = false;
+            }
         }
     }
 
