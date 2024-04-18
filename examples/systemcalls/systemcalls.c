@@ -72,6 +72,7 @@ bool do_exec(int count, ...)
     int kidpid = fork();
     if (kidpid == -1) {
         // Error to fork!
+        fflush(stdout);
         perror("fork");
         ret_val = false;
     } else if (kidpid == 0) {
