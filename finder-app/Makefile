@@ -20,6 +20,6 @@ $(TARGET): $(OBJ)
 	$(CC) $(CFLAGS) -o $@ $^
 
 clean:
-	rm -r $(TARGET) $(OBJ)
+	rm -rf $(TARGET) $(OBJ)
 
 .PHONY: all clean
