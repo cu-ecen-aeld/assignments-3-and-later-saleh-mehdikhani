@@ -118,7 +118,7 @@ make CROSS_COMPILE=${CROSS_COMPILE}
 # on the target rootfs
 cp "${FINDER_APP_DIR}"/* "${OUTDIR}/rootfs/home"
 mkdir "${OUTDIR}"/rootfs/home/conf
-cp "${FINDER_APP_DIR}"/conf/*.txt "${OUTDIR}/rootfs/home/conf"
+cp "${FINDER_APP_DIR}"/conf/* "${OUTDIR}/rootfs/home/conf"
 
 # TODO: Chown the root directory
 cd "${OUTDIR}/rootfs/"
