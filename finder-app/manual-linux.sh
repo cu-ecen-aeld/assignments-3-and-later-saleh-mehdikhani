@@ -69,13 +69,14 @@ if [ ! -d "${OUTDIR}/busybox" ]
 then
 git clone git://busybox.net/busybox.git
     cd busybox
-    git checkout ${BUSYBOX_VERSION}
-    # TODO:  Configure busybox
-    make distclean
-    make defconfig
 else
     cd busybox
 fi
+
+git checkout ${BUSYBOX_VERSION}
+# TODO:  Configure busybox
+make distclean
+make defconfig
 
 # TODO: Make and install busybox
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
@@ -116,15 +117,19 @@ make CROSS_COMPILE=${CROSS_COMPILE}
 
 # TODO: Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
-cp "${FINDER_APP_DIR}"/* "${OUTDIR}/rootfs/home"
+echo "Copying the finder scripts"
+cp "${FINDER_APP_DIR}"/*.sh "${OUTDIR}/rootfs/home"
+cp "${FINDER_APP_DIR}"/writer "${OUTDIR}/rootfs/home"
 mkdir "${OUTDIR}"/rootfs/home/conf
 cp "${FINDER_APP_DIR}"/conf/* "${OUTDIR}/rootfs/home/conf"
 
 # TODO: Chown the root directory
+echo "Chown the root directory"
 cd "${OUTDIR}/rootfs/"
 sudo chown -R root:root *
 
 # TODO: Create initramfs.cpio.gz
-find . | cpio -H newc -ov --owner root:root > "${OUTDIR}"/initramfs.cpio
-cd "${OUTDIR}"
+echo "Create initramfs.cpio.gz"
+find . | cpio -H newc -ov --owner root:root > ${OUTDIR}/initramfs.cpio
+cd ${OUTDIR}
 gzip -f initramfs.cpio
