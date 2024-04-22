@@ -116,8 +116,7 @@ make CROSS_COMPILE=${CROSS_COMPILE}
 
 # TODO: Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
-cp "${FINDER_APP_DIR}"/*.sh "${OUTDIR}/rootfs/home"
-cp "${FINDER_APP_DIR}"/writer "${OUTDIR}/rootfs/home"
+cp "${FINDER_APP_DIR}"/* "${OUTDIR}/rootfs/home"
 mkdir "${OUTDIR}"/rootfs/home/conf
 cp "${FINDER_APP_DIR}"/conf/*.txt "${OUTDIR}/rootfs/home/conf"
 
