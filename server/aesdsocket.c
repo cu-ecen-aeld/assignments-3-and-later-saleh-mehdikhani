@@ -6,26 +6,48 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <netdb.h>
+#include <signal.h>
+#include <syslog.h>
 
 #define PORT "9000"
 
 bool i_am_done = false;
+int sockfd = -1;
+FILE *file = NULL;
+const char *filename = "/var/tmp/aesdsocketdata";
+
+void signalHandler(int sig) {
+    if (sig == SIGTERM || sig == SIGINT) {
+        syslog(LOG_INFO, "Caught signal, exitin");
+        if (sockfd != -1) {
+            close(sockfd);
+        }
+        if (file != NULL) {
+            fclose(file);
+        }
+        remove(filename);
+    }
+    exit(EXIT_SUCCESS);
+}
 
 int main(int argc, char *argv[]) {
-    bool daemon = false;
+    openlog("MyServer", LOG_PID | LOG_NDELAY, LOG_DAEMON);
+
+    // Set signal handlers
+    signal(SIGTERM, signalHandler);
+    signal(SIGINT, signalHandler);
+
+    bool daemon_enabled = false;
     if (1 < argc) {
         if (strcmp(argv[1], "-d") == 0) {
-            daemon = true;
+            daemon_enabled = true;
         }
     }
 
-    if (daemon) {
-        printf("Daemon is set\n");
-    }
-
     // The socket file descriptor
-    int sockfd = socket(PF_INET, SOCK_STREAM, 0);
+    sockfd = socket(PF_INET, SOCK_STREAM, 0);
 
     // The address to be used by the socket
     struct addrinfo *servinfo;
@@ -39,6 +61,12 @@ int main(int argc, char *argv[]) {
         perror("can't get the address info");
         exit(EXIT_FAILURE);
     }
+    int reuse = 1;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
+        perror("setsockopt(SO_REUSEADDR) failed");
+        exit(EXIT_FAILURE);
+    }
+
 
     // Bind the socket to the address and port
     int bind_ret = bind(sockfd, servinfo->ai_addr, servinfo->ai_addrlen);
@@ -50,9 +78,25 @@ int main(int argc, char *argv[]) {
     // release the memory used for servinfo
     freeaddrinfo(servinfo);
 
+    if (daemon_enabled) {
+        pid_t pid = fork();
+        if (pid < 0) {
+            perror("Fork failed");
+            exit(EXIT_FAILURE);
+        }
+
+        if (pid > 0) {
+            // Parent process: Print child PID and exit
+            exit(EXIT_SUCCESS);
+        }
+
+        // Child process: Close standard file descriptors
+        close(STDIN_FILENO);
+        close(STDOUT_FILENO);
+        close(STDERR_FILENO);
+    }
+
     // Open the file to write the data into that
-    FILE *file;
-    const char *filename = "/var/tmp/aesdsocketdata";
     file = fopen(filename, "a+");
     if (file == NULL) {
         perror("Error opening file");
@@ -66,7 +110,6 @@ int main(int argc, char *argv[]) {
             perror("Listen error");
             exit(EXIT_FAILURE);
         }
-        printf("Server listening on port %s...\n", PORT);
 
         // Accept the incoming request
         struct sockaddr client_addr;
@@ -76,6 +119,13 @@ int main(int argc, char *argv[]) {
             perror("An error to accept the request");
             exit(EXIT_FAILURE);
         }
+        // Log accepted connection with client IP address
+        const struct sockaddr_in *addr_in = (struct sockaddr_in *)&client_addr;
+        char client_ip[INET_ADDRSTRLEN];
+        // Convert IPv4 address to string
+        inet_ntop(AF_INET, &(addr_in->sin_addr), client_ip, INET_ADDRSTRLEN);
+        // Log the IPv4 address
+        syslog(LOG_INFO, "Accepted connection from %s", client_ip);
 
         // receive data
         char buffer[1024] = {0};
@@ -84,15 +134,12 @@ int main(int argc, char *argv[]) {
             bytes_received = recv(new_socket, buffer, sizeof(buffer), 0);
             if (bytes_received == -1) {
                 perror("recv");
-                goto EXIT;
+                exit(EXIT_FAILURE);
             }
-
-            printf("Received data: %s", buffer);
             
             // append received data to a file
             fseek(file, 0, SEEK_END); // Move the file position indicator to the end of the file
             fwrite(buffer, sizeof(char), bytes_received, file);
-            //fprintf(file, "%s", buffer);
         } while(buffer[bytes_received - 1] != '\n');
 
         // the communication is finished, send back the result and close
@@ -101,19 +148,13 @@ int main(int argc, char *argv[]) {
         while (fgets(line, sizeof(line), file) != NULL) { // Read file line by line and send over socket
             if (send(new_socket, line, strlen(line), 0) == -1) {
                 perror("Send failed");
-                goto EXIT;
+                exit(EXIT_FAILURE);
             }
         }
         // Close the connection
         close(new_socket);
+        syslog(LOG_INFO, "Closed connection from %s", client_ip);
     }
 
-    // Close the sockets and exit
-EXIT:
-    close(sockfd);
-    fclose(file);
-    
-
-    printf("closing the application");
     return 0;
 }
