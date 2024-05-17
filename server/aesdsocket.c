@@ -10,6 +10,7 @@
 #include <netdb.h>
 #include <signal.h>
 #include <syslog.h>
+#include <pthread.h>
 
 #define PORT "9000"
 
@@ -17,6 +18,17 @@ bool i_am_done = false;
 int sockfd = -1;
 FILE *file = NULL;
 const char *filename = "/var/tmp/aesdsocketdata";
+
+struct file_access {
+    FILE *file;
+    pthread_mutex_t lock;
+};
+
+struct thread_arg {
+    struct file_access fileacc;
+    int socketfd;
+    char client_ip[INET_ADDRSTRLEN];
+};
 
 void signalHandler(int sig) {
     if (sig == SIGTERM || sig == SIGINT) {
@@ -30,6 +42,52 @@ void signalHandler(int sig) {
         remove(filename);
     }
     exit(EXIT_SUCCESS);
+}
+
+void *thread_function(void *arg) {
+    struct thread_arg *thread_arg = (struct thread_arg *)arg;
+
+    printf("new thread [%ld] created\n", pthread_self());
+
+    // receive data
+    char buffer[1024] = {0};
+    int bytes_received = 0;
+
+    pthread_mutex_lock(&(thread_arg->fileacc.lock));
+    do {
+        bytes_received = recv(thread_arg->socketfd, buffer, sizeof(buffer), 0);
+        if (bytes_received == -1) {
+            perror("recv");
+            exit(EXIT_FAILURE);
+        }
+
+        printf("bytes received: %d\n", bytes_received);
+        
+        // append received data to a file
+        fseek(thread_arg->fileacc.file, 0, SEEK_END); // Move the file position indicator to the end of the file
+        fwrite(buffer, sizeof(char), bytes_received, thread_arg->fileacc.file);
+    } while(buffer[bytes_received - 1] != '\n');
+
+    printf("new data with size %ld received\n", strlen(buffer));
+
+    // the communication is finished, send back the result and close
+    char line[1024];
+    rewind(thread_arg->fileacc.file); // Rewind the file to the beginning
+    while (fgets(line, sizeof(line), thread_arg->fileacc.file) != NULL) { // Read file line by line and send over socket
+        if (send(thread_arg->socketfd, line, strlen(line), 0) == -1) {
+            perror("Send failed");
+            exit(EXIT_FAILURE);
+        }
+    }
+    pthread_mutex_unlock(&(thread_arg->fileacc.lock));
+
+    // Close the connection
+    close(thread_arg->socketfd);
+    syslog(LOG_INFO, "Closed connection from %s", thread_arg->client_ip);
+
+    printf("thread [%ld] is done\n", pthread_self());
+
+    return NULL;
 }
 
 int main(int argc, char *argv[]) {
@@ -102,6 +160,14 @@ int main(int argc, char *argv[]) {
         perror("Error opening file");
         exit(EXIT_FAILURE);
     }
+    // create a struct to access the file using mutex
+    struct file_access fileacc;
+    fileacc.file = file;
+    if (pthread_mutex_init(&(fileacc.lock), NULL) != 0) {
+        perror("Mutex init has failed\n");
+        exit(EXIT_FAILURE);
+    }
+
 
     while (!i_am_done) {
         // Listen for the incoming requests
@@ -119,42 +185,19 @@ int main(int argc, char *argv[]) {
             perror("An error to accept the request");
             exit(EXIT_FAILURE);
         }
-        // Log accepted connection with client IP address
-        const struct sockaddr_in *addr_in = (struct sockaddr_in *)&client_addr;
-        char client_ip[INET_ADDRSTRLEN];
-        // Convert IPv4 address to string
-        inet_ntop(AF_INET, &(addr_in->sin_addr), client_ip, INET_ADDRSTRLEN);
-        // Log the IPv4 address
-        syslog(LOG_INFO, "Accepted connection from %s", client_ip);
+        const struct sockaddr_in *addr_in = (struct sockaddr_in *)&client_addr; // Log accepted connection with client IP address
 
-        // receive data
-        char buffer[1024] = {0};
-        int bytes_received = 0;
-        do {
-            bytes_received = recv(new_socket, buffer, sizeof(buffer), 0);
-            if (bytes_received == -1) {
-                perror("recv");
-                exit(EXIT_FAILURE);
-            }
-            
-            // append received data to a file
-            fseek(file, 0, SEEK_END); // Move the file position indicator to the end of the file
-            fwrite(buffer, sizeof(char), bytes_received, file);
-        } while(buffer[bytes_received - 1] != '\n');
-
-        // the communication is finished, send back the result and close
-        char line[1024];
-        rewind(file); // Rewind the file to the beginning
-        while (fgets(line, sizeof(line), file) != NULL) { // Read file line by line and send over socket
-            if (send(new_socket, line, strlen(line), 0) == -1) {
-                perror("Send failed");
-                exit(EXIT_FAILURE);
-            }
-        }
-        // Close the connection
-        close(new_socket);
-        syslog(LOG_INFO, "Closed connection from %s", client_ip);
+        // Create thread for each connection
+        struct thread_arg *thread_arg = malloc(sizeof(struct thread_arg));
+        inet_ntop(AF_INET, &(addr_in->sin_addr), thread_arg->client_ip, INET_ADDRSTRLEN); // Convert IPv4 address to string
+        syslog(LOG_INFO, "Accepted connection from %s", thread_arg->client_ip); // Log the IPv4 address
+        thread_arg->fileacc = fileacc;
+        thread_arg->socketfd = new_socket;
+        pthread_t *new_thread = malloc(sizeof(pthread_t));
+        pthread_create(new_thread, NULL, thread_function, thread_arg);
     }
+
+    sleep(100);
 
     return 0;
 }

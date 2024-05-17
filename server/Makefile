@@ -1,7 +1,7 @@
 # Toolchain and its configuration
 CC = gcc
 CFLAGS = -Wall -Wextra -g
-LDFLAGS = 
+LDFLAGS = -lpthread
 
 ifdef CROSS_COMPILE
 	CC := $(CROSS_COMPILE)gcc
@@ -17,7 +17,7 @@ OBJ = $(SRC:.c=.o)
 all: $(TARGET)
 
 $(TARGET): $(OBJ)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 clean:
 	rm -rf $(TARGET) $(OBJ)
