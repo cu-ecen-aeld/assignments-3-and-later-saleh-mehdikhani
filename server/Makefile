@@ -1,11 +1,7 @@
 # Toolchain and its configuration
-CC = gcc
-CFLAGS = -Wall -Wextra -g
-LDFLAGS = -lpthread
-
-ifdef CROSS_COMPILE
-	CC := $(CROSS_COMPILE)gcc
-endif
+CC ?= $(CROSS_COMPILE)gcc
+CFLAGS ?= -Wall -Wextra -g
+LDFLAGS ?= -lpthread
 
 # Set the target and source files
 TARGET = aesdsocket 
